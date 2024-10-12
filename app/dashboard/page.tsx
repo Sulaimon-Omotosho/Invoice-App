@@ -1,5 +1,5 @@
 import { db } from '@/db'
-import { Invoices } from '@/db/schema'
+import { Customers, Invoices } from '@/db/schema'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,16 +17,34 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import Container from '@/components/Container'
 import { auth } from '@clerk/nextjs/server'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 
 const DashboardPage = async () => {
-  const { userId } = auth()
+  const { userId, orgId } = auth()
   if (!userId) return
 
-  const results = await db
-    .select()
-    .from(Invoices)
-    .where(eq(Invoices.userId, userId))
+  let results
+
+  if (orgId) {
+    results = await db
+      .select()
+      .from(Invoices)
+      .innerJoin(Customers, eq(Invoices.customerId, Customers.id))
+      .where(eq(Invoices.organizationId, orgId))
+  } else {
+    results = await db
+      .select()
+      .from(Invoices)
+      .innerJoin(Customers, eq(Invoices.customerId, Customers.id))
+      .where(and(eq(Invoices.userId, userId), isNull(Invoices.organizationId)))
+  }
+
+  const invoices = results?.map(({ invoices, customers }) => {
+    return {
+      ...invoices,
+      customer: customers,
+    }
+  })
 
   return (
     <main className='h-full'>
@@ -53,7 +71,7 @@ const DashboardPage = async () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {results.map((result) => {
+            {invoices.map((result) => {
               return (
                 <TableRow key={result.id}>
                   <TableCell className='font-medium text-left p-0'>
@@ -69,7 +87,7 @@ const DashboardPage = async () => {
                       href={`/invoices/${result.id}`}
                       className='font-semibold p-4 block'
                     >
-                      Uncle Sula
+                      {result.customer.name}
                     </Link>
                   </TableCell>
                   <TableCell className='text-left p-0'>
@@ -77,7 +95,7 @@ const DashboardPage = async () => {
                       href={`/invoices/${result.id}`}
                       className=' p-4 block'
                     >
-                      unclesula@gmail.com
+                      {result.customer.email}
                     </Link>
                   </TableCell>
                   <TableCell className='text-center p-0'>
